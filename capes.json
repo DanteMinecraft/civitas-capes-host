@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "capes": [
+    {
+      "id": "civitas",
+      "displayName": "Civitas",
+      "type": "URL",
+      "location": "https://YOUR-DOMAIN/capes/auth.png"
+    }
+  ]
+}
