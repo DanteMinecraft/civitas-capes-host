@@ -2,11 +2,16 @@
   "schemaVersion": 1,
   "players": [
     {
-      "uuid": "REPLACE-WITH-PLAYER-UUID",
+      "uuid": "2e714d0e-4b93-402c-8ff0-b477d2fa9004",
       "activeCape": "civitas",
-      "unlockedCapes": [
-        "civitas"
-      ],
+      "unlockedCapes": ["civitas"],
+      "capeEnabled": true,
+      "capeForced": false
+    },
+	{
+      "uuid": "380df991-f603-344c-a090-369bad2a924a",
+      "activeCape": "minecon2012",
+      "unlockedCapes": ["civitas", "mojang", "minecon2012", "test"],
       "capeEnabled": true,
       "capeForced": false
     }

@@ -5,7 +5,25 @@
       "id": "civitas",
       "displayName": "Civitas",
       "type": "URL",
-      "location": "https://YOUR-DOMAIN/capes/auth.png"
+      "location": "http://127.0.0.1:8080/capes/auth.png"
+    },
+	{
+      "id": "mojang",
+      "displayName": "Mojang",
+      "type": "URL",
+      "location": "http://127.0.0.1:8080/capes/mojangstudios.png"
+    },
+	{
+      "id": "minecon2012",
+      "displayName": "Minecon",
+      "type": "URL",
+      "location": "http://127.0.0.1:8080/capes/minecon2012.png"
+    },
+	{
+      "id": "test",
+      "displayName": "test",
+      "type": "URL",
+      "location": "http://127.0.0.1:8080/capes/test.png"
     }
   ]
 }
