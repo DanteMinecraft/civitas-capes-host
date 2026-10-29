@@ -4,21 +4,33 @@
     {
       "uuid": "2e714d0e-4b93-402c-8ff0-b477d2fa9004",
       "activeCape": "civitas",
-      "unlockedCapes": ["civitas"],
+      "unlockedCapes": [
+        "civitas"
+      ],
       "capeEnabled": true,
       "capeForced": false
     },
-	{
+    {
       "uuid": "baaef355-3f22-457d-93e0-99b62e8e549c",
       "activeCape": "minecon2012",
-      "unlockedCapes": ["civitas", "mojang", "minecon2012", "test"],
+      "unlockedCapes": [
+        "civitas",
+        "mojang",
+        "minecon2012",
+        "test"
+      ],
       "capeEnabled": true,
       "capeForced": false
     },
-	{
+    {
       "uuid": "380df991-f603-344c-a090-369bad2a924a",
       "activeCape": "minecon2012",
-      "unlockedCapes": ["civitas", "mojang", "minecon2012", "test"],
+      "unlockedCapes": [
+        "civitas",
+        "mojang",
+        "minecon2012",
+        "test"
+      ],
       "capeEnabled": true,
       "capeForced": false
     }
