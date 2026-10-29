@@ -9,6 +9,13 @@
       "capeForced": false
     },
 	{
+      "uuid": "baaef355-3f22-457d-93e0-99b62e8e549c",
+      "activeCape": "minecon2012",
+      "unlockedCapes": ["civitas", "mojang", "minecon2012", "test"],
+      "capeEnabled": true,
+      "capeForced": false
+    },
+	{
       "uuid": "380df991-f603-344c-a090-369bad2a924a",
       "activeCape": "minecon2012",
       "unlockedCapes": ["civitas", "mojang", "minecon2012", "test"],
