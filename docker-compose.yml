@@ -1,0 +1,15 @@
+services:
+  civitas-capes-host:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DATA_DIR: /data
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in your environment}
+      COOKIE_SECRET: ${COOKIE_SECRET:?Set a random COOKIE_SECRET in your environment}
+    volumes:
+      - civitas-capes-data:/data
+    expose:
+      - "3000"
+volumes:
+  civitas-capes-data:

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#10151f"><title>Admin · Civitas Capes</title><link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<main class="shell admin-shell">
+  <header class="top"><a class="brand" href="/">CIVITAS<span>CAPES</span></a><a class="navlink" href="/">← Back to site</a></header>
+  <section class="admin-head"><p class="eyebrow">PRIVATE AREA</p><h1>Data <span>manager</span></h1><p class="lede">Edit the live JSON files. Changes are saved directly to the host; no Git commit or redeployment needed.</p></section>
+  <section id="login-panel" class="panel narrow">
+    <h2>Admin sign in</h2><p class="muted">Use the admin password configured in Dokploy's environment variables.</p>
+    <form id="login-form"><label for="password">Admin password</label><input id="password" type="password" autocomplete="current-password" required minlength="1" placeholder="Enter admin password"><button class="button primary full" type="submit">Sign in</button></form>
+    <p id="login-message" class="message" role="status"></p>
+  </section>
+  <section id="editor-panel" class="panel hidden">
+    <div class="editor-top"><div><h2>Live JSON editor</h2><p class="muted">Save validates the JSON structure before writing the file.</p></div><button id="logout" class="button secondary">Sign out</button></div>
+    <div class="tabs"><button class="tab active" data-file="capes.json">capes.json</button><button class="tab" data-file="players.json">players.json</button></div>
+    <div class="editor-toolbar"><span id="file-label">capes.json</span><div class="toolbar-actions"><button id="reload" class="button secondary small">Discard local edits</button><button id="save" class="button primary small">Save changes</button></div></div>
+    <textarea id="json-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="JSON editor"></textarea>
+    <p id="editor-message" class="message" role="status"></p>
+    <div class="tip"><strong>Tip:</strong> Use the player's UUID, not their Minecraft username. Texture URLs must be public HTTP(S) URLs. Keep a backup before making large changes.</div>
+  </section>
+  <footer><span>CIVITAS CAPES</span><span>Admin access should only be shared with trusted people.</span></footer>
+</main>
+<script src="/admin.js" defer></script>
+</body></html>

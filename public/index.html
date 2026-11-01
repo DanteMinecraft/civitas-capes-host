@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#10151f"><meta name="description" content="Civitas Capes community cape service">
+<title>Civitas Capes</title><link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<main class="shell">
+  <header class="top"><a class="brand" href="/">CIVITAS<span>CAPES</span></a><a class="navlink" href="/admin">Admin login <span aria-hidden="true">↗</span></a></header>
+  <section class="hero">
+    <p class="eyebrow">COMMUNITY CAPE SERVICE</p>
+    <h1>Your community.<br><span>Your capes.</span></h1>
+    <p class="lede">A lightweight data host for the Civitas Capes Minecraft mod. Cape definitions, player assignments and texture files are served from this host.</p>
+    <div class="actions"><a class="button primary" href="/capes.json">View cape catalog <span>↗</span></a><a class="button secondary" href="/players.json">View player data <span>↗</span></a></div>
+    <div class="status"><span class="pulse"></span><span>Public data endpoints</span><span class="status-dot">●</span></div>
+  </section>
+  <section class="cards">
+    <article class="card"><div class="icon">01</div><h2>Cape catalog</h2><p>Define each cape's ID, display name, type and texture URL.</p><code>/capes.json</code></article>
+    <article class="card"><div class="icon">02</div><h2>Player assignments</h2><p>Choose active capes, unlocked capes and player-specific settings.</p><code>/players.json</code></article>
+    <article class="card"><div class="icon">03</div><h2>Texture files</h2><p>Host cape PNGs and reference their public URLs in the catalog.</p><code>/capes/your-cape.png</code></article>
+  </section>
+  <section class="callout"><div><p class="eyebrow">ADMINISTRATION</p><h2>Manage the data without redeploying</h2><p>Sign in to the admin page to edit and save the JSON files directly on the host.</p></div><a class="button secondary" href="/admin">Open admin ↗</a></section>
+  <footer><span>CIVITAS CAPES</span><span>Community-hosted Minecraft cape data</span></footer>
+</main>
+</body></html>
