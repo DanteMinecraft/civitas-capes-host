@@ -1,96 +1,22 @@
-const loginPanel = document.querySelector("#login-panel");
-const editorPanel = document.querySelector("#editor-panel");
-const loginForm = document.querySelector("#login-form");
-const passwordInput = document.querySelector("#password");
-const loginMessage = document.querySelector("#login-message");
-const editorMessage = document.querySelector("#editor-message");
-const editor = document.querySelector("#json-editor");
-const fileLabel = document.querySelector("#file-label");
-const saveButton = document.querySelector("#save");
-const reloadButton = document.querySelector("#reload");
-const tabs = [...document.querySelectorAll(".tab")];
-let currentFile = "capes.json";
-let savedText = "";
-
-function message(el, text, kind = "") {
-  el.textContent = text;
-  el.className = `message ${kind}`.trim();
+let csrf=null;
+const $=id=>document.getElementById(id);
+async function api(url,options={}) {
+  const headers={...(options.headers||{})}; if(csrf) headers['X-Civitas-CSRF']=csrf;
+  const r=await fetch(url,{...options,headers,credentials:'same-origin'});
+  const data=await r.json().catch(()=>({error:'Unexpected server response'}));
+  if(!r.ok) throw new Error(data.error||`HTTP ${r.status}`); return data;
 }
-async function api(url, options = {}) {
-  const response = await fetch(url, { credentials: "same-origin", ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
-  const text = await response.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { error: text || `HTTP ${response.status}` }; }
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
-  return data;
+function status(id,msg,good=true){$(id).textContent=msg;$(id).className='status '+(good?'good':'error');}
+async function load(){
+ const d=await api('/api/data'); $('capesJson').value=JSON.stringify(d.capes,null,2); $('playersJson').value=JSON.stringify(d.players,null,2);
+ $('capeCount').textContent=d.capes.capes.length; $('playerCount').textContent=d.players.players.length;
 }
-function showEditor() {
-  loginPanel.classList.add("hidden");
-  editorPanel.classList.remove("hidden");
-}
-function showLogin() {
-  editorPanel.classList.add("hidden");
-  loginPanel.classList.remove("hidden");
-}
-async function loadFile(file = currentFile) {
-  currentFile = file;
-  fileLabel.textContent = file;
-  tabs.forEach(tab => tab.classList.toggle("active", tab.dataset.file === file));
-  try {
-    const data = await api(`/api/${file}`);
-    savedText = JSON.stringify(data, null, 2) + "\n";
-    editor.value = savedText;
-    message(editorMessage, `${file} loaded from the live host.`, "success");
-  } catch (err) {
-    message(editorMessage, err.message, "error");
-    if (err.message.includes("Sign in")) showLogin();
-  }
-}
-async function checkSession() {
-  try {
-    const session = await api("/api/session");
-    if (session.authenticated) {
-      showEditor();
-      await loadFile();
-    } else showLogin();
-  } catch { showLogin(); }
-}
-loginForm.addEventListener("submit", async event => {
-  event.preventDefault();
-  message(loginMessage, "Signing in…");
-  try {
-    await api("/api/login", { method: "POST", body: JSON.stringify({ password: passwordInput.value }) });
-    passwordInput.value = "";
-    message(loginMessage, "");
-    showEditor();
-    await loadFile("capes.json");
-  } catch (err) { message(loginMessage, err.message, "error"); }
-});
-tabs.forEach(tab => tab.addEventListener("click", async () => {
-  if (editor.value !== savedText && !confirm("Discard unsaved changes and switch files?")) return;
-  await loadFile(tab.dataset.file);
-}));
-reloadButton.addEventListener("click", async () => {
-  if (editor.value !== savedText && !confirm("Discard unsaved changes?")) return;
-  await loadFile();
-});
-saveButton.addEventListener("click", async () => {
-  let parsed;
-  try { parsed = JSON.parse(editor.value); }
-  catch (err) { message(editorMessage, `Invalid JSON syntax: ${err.message}`, "error"); return; }
-  saveButton.disabled = true;
-  message(editorMessage, "Validating and saving…");
-  try {
-    const result = await api(`/api/${currentFile}`, { method: "PUT", body: JSON.stringify(parsed) });
-    savedText = JSON.stringify(parsed, null, 2) + "\n";
-    editor.value = savedText;
-    message(editorMessage, result.message, "success");
-  } catch (err) { message(editorMessage, err.message, "error"); }
-  finally { saveButton.disabled = false; }
-});
-document.querySelector("#logout").addEventListener("click", async () => {
-  try { await api("/api/logout", { method: "POST", body: "{}" }); } catch {}
-  showLogin();
-  message(loginMessage, "Signed out.");
-});
-checkSession();
+async function check(){const s=await fetch('/api/session',{credentials:'same-origin'}).then(r=>r.json()); if(s.authenticated){csrf=s.csrf;$('login').hidden=true;$('app').hidden=false;await load();}}
+$('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginError').textContent='';try{const d=await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('password').value})});csrf=d.csrf;$('password').value='';$('login').hidden=true;$('app').hidden=false;await load();}catch(e){$('loginError').textContent=e.message;}});
+$('logout').onclick=async()=>{try{await api('/api/logout',{method:'POST'});}finally{csrf=null;location.reload();}};
+$('refresh').onclick=()=>load().catch(e=>alert(e.message));
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));$('capes').hidden=b.dataset.tab!=='capes';$('players').hidden=b.dataset.tab!=='players';});
+$('saveCapes').onclick=async()=>{try{const x=JSON.parse($('capesJson').value);await api('/api/capes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(x)});status('capesStatus','Saved successfully.');await load();}catch(e){status('capesStatus',e.message,false);}};
+$('savePlayers').onclick=async()=>{try{const x=JSON.parse($('playersJson').value);await api('/api/players',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(x)});status('playersStatus','Saved successfully.');await load();}catch(e){status('playersStatus',e.message,false);}};
+$('upload').onclick=async()=>{const f=$('file').files[0];if(!f)return status('uploadResult','Choose an image first.',false);const name=$('fileName').value.trim()||f.name;try{const r=await api('/api/upload',{method:'POST',headers:{'Content-Type':f.type,'X-File-Name':name},body:f});$('uploadResult').textContent=`Uploaded. Public URL: ${r.url} — add this URL to the cape catalog.`;}catch(e){status('uploadResult',e.message,false);}};
+check().catch(e=>console.error(e));

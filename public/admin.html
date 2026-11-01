@@ -1,27 +1,12 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#10151f"><title>Admin · Civitas Capes</title><link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-<main class="shell admin-shell">
-  <header class="top"><a class="brand" href="/">CIVITAS<span>CAPES</span></a><a class="navlink" href="/">← Back to site</a></header>
-  <section class="admin-head"><p class="eyebrow">PRIVATE AREA</p><h1>Data <span>manager</span></h1><p class="lede">Edit the live JSON files. Changes are saved directly to the host; no Git commit or redeployment needed.</p></section>
-  <section id="login-panel" class="panel narrow">
-    <h2>Admin sign in</h2><p class="muted">Use the admin password configured in Dokploy's environment variables.</p>
-    <form id="login-form"><label for="password">Admin password</label><input id="password" type="password" autocomplete="current-password" required minlength="1" placeholder="Enter admin password"><button class="button primary full" type="submit">Sign in</button></form>
-    <p id="login-message" class="message" role="status"></p>
-  </section>
-  <section id="editor-panel" class="panel hidden">
-    <div class="editor-top"><div><h2>Live JSON editor</h2><p class="muted">Save validates the JSON structure before writing the file.</p></div><button id="logout" class="button secondary">Sign out</button></div>
-    <div class="tabs"><button class="tab active" data-file="capes.json">capes.json</button><button class="tab" data-file="players.json">players.json</button></div>
-    <div class="editor-toolbar"><span id="file-label">capes.json</span><div class="toolbar-actions"><button id="reload" class="button secondary small">Discard local edits</button><button id="save" class="button primary small">Save changes</button></div></div>
-    <textarea id="json-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="JSON editor"></textarea>
-    <p id="editor-message" class="message" role="status"></p>
-    <div class="tip"><strong>Tip:</strong> Use the player's UUID, not their Minecraft username. Texture URLs must be public HTTP(S) URLs. Keep a backup before making large changes.</div>
-  </section>
-  <footer><span>CIVITAS CAPES</span><span>Admin access should only be shared with trusted people.</span></footer>
-</main>
-<script src="/admin.js" defer></script>
-</body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Civitas Capes — Admin</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main class="shell"><header><div class="brand"><span class="mark">C</span><div><strong>CIVITAS CAPES</strong><small>ADMINISTRATION CONSOLE</small></div></div><span class="secure">PRIVATE ACCESS</span></header>
+<section id="login" class="panel login"><p class="eyebrow">RESTRICTED AREA</p><h1>Welcome back.</h1><p class="muted">Sign in to manage the Civitas Capes database.</p><form id="loginForm"><label>Administrator password<input id="password" type="password" autocomplete="current-password" required></label><button>Sign in <span>→</span></button><p id="loginError" class="error"></p></form></section>
+<section id="app" hidden><div class="welcome"><div><p class="eyebrow">CONTROL CENTER</p><h1>Database overview</h1><p class="muted">Changes are published to Minecraft clients through the public database.</p></div><button id="logout" class="secondary">Sign out</button></div>
+<div class="stats"><div class="panel stat"><small>REGISTERED CAPES</small><strong id="capeCount">—</strong></div><div class="panel stat"><small>PLAYER RECORDS</small><strong id="playerCount">—</strong></div><div class="panel stat"><small>PUBLIC API</small><strong class="online">● Online</strong></div></div>
+<div class="tabs"><button class="tab active" data-tab="capes">Cape Manager</button><button class="tab" data-tab="players">Player Manager</button></div>
+<section id="capes" class="panel editor"><div class="sectionhead"><div><h2>Cape catalog</h2><p class="muted">Upload textures and edit the public catalog.</p></div><button id="refresh" class="secondary">Refresh data</button></div>
+<div class="upload"><div><strong>Upload a cape texture</strong><p class="muted">PNG, JPG or WEBP · Maximum 5 MB</p></div><div class="uploadcontrols"><input id="file" type="file" accept="image/png,image/jpeg,image/webp"><input id="fileName" placeholder="filename e.g. civitas.png"><button id="upload">Upload</button></div><p id="uploadResult" class="muted"></p></div>
+<label>Capes JSON<textarea id="capesJson" spellcheck="false"></textarea></label><div class="actions"><button id="saveCapes">Save cape catalog</button><span id="capesStatus" class="status"></span></div></section>
+<section id="players" class="panel editor" hidden><div class="sectionhead"><div><h2>Player assignments</h2><p class="muted">Assign capes to Minecraft UUIDs.</p></div></div><label>Players JSON<textarea id="playersJson" spellcheck="false"></textarea></label><div class="actions"><button id="savePlayers">Save player data</button><span id="playersStatus" class="status"></span></div></section>
+<footer> C IVITAS CAPES · PRIVATE ADMINISTRATION · <a href="https://capedatabase.teamcivitas.net" target="_blank" rel="noreferrer">PUBLIC DATABASE ↗</a></footer></section></main><script src="/admin.js"></script></body></html>

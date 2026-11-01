@@ -1,13 +1,8 @@
 {
-  "name": "civitas-capes-host",
-  "version": "1.0.0",
+  "name": "civitas-capes",
+  "version": "2.0.0",
   "private": true,
-  "description": "Self-hosted Civitas Capes JSON editor and static asset host",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=20"
-  }
+  "description": "Civitas Capes public asset API and private admin panel",
+  "scripts": {"start": "node server.js"},
+  "engines": {"node": ">=20"}
 }

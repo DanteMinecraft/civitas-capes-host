@@ -1,209 +1,152 @@
-const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
-const crypto = require("node:crypto");
+const http = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const crypto = require('node:crypto');
 
 const PORT = Number(process.env.PORT || 3000);
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
-const COOKIE_SECRET = process.env.COOKIE_SECRET || "";
-const DATA_DIR = process.env.DATA_DIR || "/data";
-const PUBLIC_DIR = path.join(__dirname, "public");
-const CAPES_DIR = path.join(DATA_DIR, "capes");
+const DATA_DIR = process.env.DATA_DIR || '/data';
+const PUBLIC_HOST = (process.env.PUBLIC_HOST || 'capedatabase.teamcivitas.net').toLowerCase();
+const ADMIN_HOST = (process.env.ADMIN_HOST || 'capeadmin.teamcivitas.net').toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const COOKIE_SECRET = process.env.COOKIE_SECRET || '';
+const ACCESS_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+const SESSION_MS = 12 * 60 * 60 * 1000;
 
-if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 16) {
-  console.error("Set ADMIN_PASSWORD to a strong password of at least 16 characters.");
-  process.exit(1);
-}
-if (!COOKIE_SECRET || COOKIE_SECRET.length < 32) {
-  console.error("Set COOKIE_SECRET to a random secret of at least 32 characters.");
-  process.exit(1);
-}
+if (ADMIN_PASSWORD.length < 16) throw new Error('ADMIN_PASSWORD must be at least 16 characters.');
+if (COOKIE_SECRET.length < 32) throw new Error('COOKIE_SECRET must be at least 32 characters.');
+if (PUBLIC_HOST === ADMIN_HOST) throw new Error('PUBLIC_HOST and ADMIN_HOST must be different.');
 
-const MIME = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".webp": "image/webp",
-  ".ico": "image/x-icon"
-};
-const FILES = {
-  "/capes.json": path.join(DATA_DIR, "capes.json"),
-  "/players.json": path.join(DATA_DIR, "players.json")
-};
-const MAX_BODY = 2 * 1024 * 1024;
-const COOKIE_NAME = "civitas_admin";
+const sessions = new Map();
+const mime = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.json':'application/json; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.html':'text/html; charset=utf-8'};
 
-function safeEqual(a, b) {
-  const aa = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+function hostOf(req) { return String(req.headers.host || '').split(':')[0].toLowerCase(); }
+function send(res, status, body, type='application/json; charset=utf-8', extra={}) {
+  const buf = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+  res.writeHead(status, {'Content-Type':type,'Content-Length':buf.length,'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Cache-Control':'no-store',...extra});
+  res.end(buf);
 }
-function sign(value) {
-  return crypto.createHmac("sha256", COOKIE_SECRET).update(value).digest("hex");
+function json(res,status,obj,extra={}) { send(res,status,JSON.stringify(obj), 'application/json; charset=utf-8', extra); }
+function parseCookies(req) {
+  const out={}; for (const part of String(req.headers.cookie||'').split(';')) { const i=part.indexOf('='); if(i>0) out[part.slice(0,i).trim()]=part.slice(i+1).trim(); } return out;
 }
-function parseCookies(header = "") {
-  const out = {};
-  for (const part of header.split(";")) {
-    const i = part.indexOf("=");
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
-  }
-  return out;
+function sign(value) { return crypto.createHmac('sha256',COOKIE_SECRET).update(value).digest('hex'); }
+function sessionFor(req) {
+  const raw=parseCookies(req).civitas_admin; if(!raw) return null;
+  const [id,exp,sig]=raw.split('.'); if(!id||!exp||!sig||Number(exp)<Date.now()) return null;
+  const expected=sign(id+'.'+exp);
+  if(sig.length!==expected.length || !crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected))) return null;
+  const s=sessions.get(id); if(!s || s.exp!==Number(exp)) return null;
+  return s;
 }
-function isAuthed(req) {
-  const token = parseCookies(req.headers.cookie || "")[COOKIE_NAME];
-  if (!token) return false;
-  const split = token.lastIndexOf(".");
-  if (split < 1) return false;
-  const payload = token.slice(0, split);
-  const signature = token.slice(split + 1);
-  if (!safeEqual(signature, sign(payload))) return false;
-  const parts = payload.split(":");
-  if (parts[0] !== "admin") return false;
-  const issuedAt = Number(parts[1]);
-  return Number.isFinite(issuedAt) && Date.now() - issuedAt < 12 * 60 * 60 * 1000 && issuedAt <= Date.now();
+function cookie(id,exp) { const value=id+'.'+exp; return `civitas_admin=${value}.${sign(value)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${Math.floor((exp-Date.now())/1000)}`; }
+async function body(req, max=2*1024*1024) {
+  const chunks=[]; let size=0;
+  for await (const c of req) { size+=c.length; if(size>max) throw new Error('Request too large'); chunks.push(c); }
+  return Buffer.concat(chunks);
 }
-function send(res, status, body, type = "application/json; charset=utf-8", extraHeaders = {}) {
-  res.writeHead(status, {
-    "Content-Type": type,
-    "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer",
-    "Cache-Control": "no-store",
-    ...extraHeaders
-  });
-  res.end(Buffer.isBuffer(body) ? body : (typeof body === "string" ? body : JSON.stringify(body)));
+async function readJson(name) {
+  const p=path.join(DATA_DIR,name);
+  try { return JSON.parse(await fs.readFile(p,'utf8')); }
+  catch(e) { if(e.code==='ENOENT') return name==='capes.json'?{schemaVersion:1,capes:[]}:{schemaVersion:1,players:[]}; throw e; }
 }
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", chunk => {
-      body += chunk;
-      if (Buffer.byteLength(body) > MAX_BODY) {
-        reject(new Error("Request body too large"));
-        req.destroy();
-      }
-    });
-    req.on("end", () => resolve(body));
-    req.on("error", reject);
-  });
+async function writeJson(name,obj) {
+  const tmp=path.join(DATA_DIR, name+'.tmp');
+  await fs.mkdir(DATA_DIR,{recursive:true});
+  await fs.writeFile(tmp, JSON.stringify(obj,null,2)+'\n',{mode:0o600});
+  await fs.rename(tmp,path.join(DATA_DIR,name));
 }
-function ensureData() {
-  fs.mkdirSync(CAPES_DIR, { recursive: true });
-  for (const name of ["capes.json", "players.json"]) {
-    const target = path.join(DATA_DIR, name);
-    const starter = path.join(__dirname, "data", name);
-    if (!fs.existsSync(target)) fs.copyFileSync(starter, target);
+function validateCatalog(x) {
+  if(!x || x.schemaVersion!==1 || !Array.isArray(x.capes)) throw new Error('Expected schemaVersion 1 and a capes array.');
+  const ids=new Set();
+  for(const c of x.capes) {
+    if(!c || !/^[a-z0-9_-]{1,48}$/.test(c.id||'')) throw new Error('Each cape needs a valid id (a-z, 0-9, _ or -).');
+    if(ids.has(c.id)) throw new Error('Duplicate cape id: '+c.id); ids.add(c.id);
+    if(typeof c.displayName!=='string' || !c.displayName.trim()) throw new Error('Each cape needs a displayName.');
+    if(c.type!=='URL' || typeof c.location!=='string' || !/^https?:\/\//i.test(c.location)) throw new Error('Each cape needs type URL and an http(s) location.');
   }
 }
-function validateJsonFile(name, value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "Root must be a JSON object.";
-  if (value.schemaVersion !== 1) return "schemaVersion must be 1.";
-  if (name === "capes.json") {
-    if (!Array.isArray(value.capes)) return "capes must be an array.";
-    const ids = new Set();
-    for (const [i, cape] of value.capes.entries()) {
-      if (!cape || typeof cape !== "object") return `capes[${i}] must be an object.`;
-      if (typeof cape.id !== "string" || !cape.id.trim()) return `capes[${i}].id is required.`;
-      if (ids.has(cape.id)) return `Duplicate cape id: ${cape.id}`;
-      ids.add(cape.id);
-      if (typeof cape.displayName !== "string" || !cape.displayName.trim()) return `capes[${i}].displayName is required.`;
-      if (cape.type !== "URL") return `capes[${i}].type must be "URL".`;
-      if (typeof cape.location !== "string" || !/^https?:\/\//i.test(cape.location)) return `capes[${i}].location must be an HTTP(S) URL.`;
+function validatePlayers(x,catalog) {
+  if(!x || x.schemaVersion!==1 || !Array.isArray(x.players)) throw new Error('Expected schemaVersion 1 and a players array.');
+  const ids=new Set(), capes=new Set(catalog.capes.map(c=>c.id));
+  for(const p of x.players) {
+    if(!p || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.uuid||'')) throw new Error('Each player needs a valid UUID.');
+    if(ids.has(p.uuid)) throw new Error('Duplicate player UUID: '+p.uuid); ids.add(p.uuid);
+    if(p.activeCape && !capes.has(p.activeCape)) throw new Error('Unknown active cape for '+p.uuid+': '+p.activeCape);
+    if(!Array.isArray(p.unlockedCapes) || p.unlockedCapes.some(id=>!capes.has(id))) throw new Error('Invalid unlockedCapes for '+p.uuid);
+    if(typeof p.capeEnabled!=='boolean' || typeof p.capeForced!=='boolean') throw new Error('capeEnabled and capeForced must be booleans.');
+  }
+}
+function adminGate(req,res) {
+  const s=sessionFor(req); if(!s) { json(res,401,{error:'Authentication required'}); return null; }
+  const csrf=req.headers['x-civitas-csrf'];
+  if(!csrf || csrf!==s.csrf) { json(res,403,{error:'Invalid CSRF token'}); return null; }
+  const origin=req.headers.origin;
+  if(origin && new URL(origin).host.toLowerCase()!==ADMIN_HOST) { json(res,403,{error:'Invalid origin'}); return null; }
+  return s;
+}
+async function publicRoute(req,res,url) {
+  if(req.method==='GET' && url.pathname==='/health') return json(res,200,{ok:true});
+  if(req.method==='GET' && (url.pathname==='/capes.json'||url.pathname==='/players.json')) {
+    const name=url.pathname.slice(1); const data=await readJson(name);
+    return send(res,200,JSON.stringify(data), 'application/json; charset=utf-8', {'Cache-Control':'public, max-age=15'});
+  }
+  if(req.method==='GET' && url.pathname.startsWith('/capes/')) {
+    const name=path.basename(decodeURIComponent(url.pathname.slice('/capes/'.length)));
+    if(!/^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp)$/i.test(name)) return json(res,404,{error:'Not found'});
+    try { const p=path.join(DATA_DIR,'capes',name); const data=await fs.readFile(p); return send(res,200,data,mime[path.extname(name).toLowerCase()]||'application/octet-stream',{'Cache-Control':'public, max-age=300'}); }
+    catch(e) { if(e.code==='ENOENT') return json(res,404,{error:'Cape not found'}); throw e; }
+  }
+  return json(res,404,{error:'Not found'});
+}
+async function adminRoute(req,res,url) {
+  if(req.method==='GET' && url.pathname==='/') return send(res,200,await fs.readFile(path.join(__dirname,'public/admin.html'),'utf8'),'text/html; charset=utf-8');
+  if(req.method==='GET' && url.pathname==='/admin.js') return send(res,200,await fs.readFile(path.join(__dirname,'public/admin.js'),'utf8'),'text/javascript; charset=utf-8');
+  if(req.method==='GET' && url.pathname==='/styles.css') return send(res,200,await fs.readFile(path.join(__dirname,'public/styles.css'),'utf8'),'text/css; charset=utf-8');
+  if(req.method==='POST' && url.pathname==='/api/login') {
+    const b=JSON.parse((await body(req,8192)).toString('utf8'));
+    const a=Buffer.from(String(b.password||'')), expected=Buffer.from(ADMIN_PASSWORD);
+    if(a.length!==expected.length || !crypto.timingSafeEqual(a,expected)) return json(res,401,{error:'Incorrect password'});
+    const id=crypto.randomBytes(24).toString('hex'), exp=Date.now()+SESSION_MS, csrf=crypto.randomBytes(24).toString('hex');
+    sessions.set(id,{exp,csrf}); return json(res,200,{ok:true,csrf}, {'Set-Cookie':cookie(id,exp)});
+  }
+  if(req.method==='POST' && url.pathname==='/api/logout') {
+    const s=sessionFor(req); if(s) { for(const [id,v] of sessions) if(v===s) sessions.delete(id); }
+    return json(res,200,{ok:true},{'Set-Cookie':'civitas_admin=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
+  }
+  if(req.method==='GET' && url.pathname==='/api/session') {
+    const s=sessionFor(req); return s?json(res,200,{authenticated:true,csrf:s.csrf}):json(res,200,{authenticated:false});
+  }
+  if(url.pathname.startsWith('/api/')) {
+    const s=adminGate(req,res); if(!s) return;
+    if(req.method==='GET' && url.pathname==='/api/data') return json(res,200,{capes:await readJson('capes.json'),players:await readJson('players.json')});
+    if(req.method==='PUT' && url.pathname==='/api/capes') {
+      const x=JSON.parse((await body(req)).toString('utf8')); validateCatalog(x); await writeJson('capes.json',x); return json(res,200,{ok:true});
     }
-  } else if (name === "players.json") {
-    if (!Array.isArray(value.players)) return "players must be an array.";
-    const uuids = new Set();
-    for (const [i, player] of value.players.entries()) {
-      if (!player || typeof player !== "object") return `players[${i}] must be an object.`;
-      if (typeof player.uuid !== "string" || !player.uuid.trim()) return `players[${i}].uuid is required.`;
-      if (uuids.has(player.uuid.toLowerCase())) return `Duplicate player UUID: ${player.uuid}`;
-      uuids.add(player.uuid.toLowerCase());
-      if (!(typeof player.activeCape === "string" || player.activeCape === null)) return `players[${i}].activeCape must be a string or null.`;
-      if (!Array.isArray(player.unlockedCapes) || !player.unlockedCapes.every(x => typeof x === "string")) return `players[${i}].unlockedCapes must be an array of strings.`;
-      if (typeof player.capeEnabled !== "boolean") return `players[${i}].capeEnabled must be true or false.`;
-      if (typeof player.capeForced !== "boolean") return `players[${i}].capeForced must be true or false.`;
+    if(req.method==='PUT' && url.pathname==='/api/players') {
+      const x=JSON.parse((await body(req)).toString('utf8')); validatePlayers(x,await readJson('capes.json')); await writeJson('players.json',x); return json(res,200,{ok:true});
     }
-  } else return "Unknown file.";
-  return null;
-}
-function atomicWrite(file, content) {
-  const temp = file + "." + crypto.randomBytes(6).toString("hex") + ".tmp";
-  fs.writeFileSync(temp, content, { encoding: "utf8", mode: 0o640 });
-  fs.renameSync(temp, file);
-}
-function serveStatic(req, res, urlPath) {
-  if (urlPath === "/") urlPath = "/index.html";
-  if (urlPath === "/admin") urlPath = "/admin.html";
-  if (FILES[urlPath]) {
-    try { return send(res, 200, fs.readFileSync(FILES[urlPath], "utf8")); }
-    catch { return send(res, 404, { error: "Not found" }); }
+    if(req.method==='POST' && url.pathname==='/api/upload') {
+      const filename=String(req.headers['x-file-name']||'').replace(/[^a-zA-Z0-9._-]/g,'_');
+      if(!/^[a-zA-Z0-9_-]{1,48}\.(png|jpg|jpeg|webp)$/i.test(filename)) return json(res,400,{error:'Filename must be a simple name ending in png, jpg, jpeg or webp.'});
+      const type=String(req.headers['content-type']||'').toLowerCase();
+      const allowed={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};
+      if(!allowed[type] || !filename.toLowerCase().endsWith('.'+allowed[type]) && !(allowed[type]==='jpg'&&filename.toLowerCase().endsWith('.jpeg'))) return json(res,415,{error:'Unsupported image type or extension.'});
+      const data=await body(req,5*1024*1024);
+      const sigs={'image/png':'89504e470d0a1a0a','image/jpeg':'ffd8ff','image/webp':'52494646'};
+      if(data.length<12 || !data.subarray(0,sigs[type].length).toString('hex').startsWith(sigs[type])) return json(res,400,{error:'File content does not match image type.'});
+      await fs.mkdir(path.join(DATA_DIR,'capes'),{recursive:true});
+      await fs.writeFile(path.join(DATA_DIR,'capes',filename),data,{mode:0o644});
+      return json(res,200,{ok:true,filename,url:`https://${PUBLIC_HOST}/capes/${encodeURIComponent(filename)}`});
+    }
   }
-  if (urlPath.startsWith("/capes/")) {
-    const name = urlPath.slice("/capes/".length);
-    if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) return send(res, 400, { error: "Invalid path" });
-    const file = path.join(CAPES_DIR, name);
-    try {
-      const ext = path.extname(file).toLowerCase();
-      if (![".png", ".jpg", ".jpeg", ".webp"].includes(ext)) return send(res, 403, { error: "File type not allowed" });
-      return send(res, 200, fs.readFileSync(file), MIME[ext] || "application/octet-stream");
-    } catch { return send(res, 404, { error: "Texture not found" }); }
-  }
-  const fileName = path.basename(urlPath);
-  if (!["index.html", "admin.html", "styles.css", "admin.js"].includes(fileName)) return send(res, 404, { error: "Not found" });
+  return json(res,404,{error:'Not found'});
+}
+const server=http.createServer(async(req,res)=>{
   try {
-    const file = path.join(PUBLIC_DIR, fileName);
-    return send(res, 200, fs.readFileSync(file), MIME[path.extname(file)] || "application/octet-stream");
-  } catch { return send(res, 404, { error: "Not found" }); }
-}
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-  const pathname = decodeURIComponent(url.pathname);
-
-  if (req.method === "GET" && pathname === "/api/session") {
-    return send(res, 200, { authenticated: isAuthed(req) });
-  }
-  if (req.method === "POST" && pathname === "/api/login") {
-    try {
-      const body = JSON.parse(await readBody(req));
-      if (!safeEqual(body.password || "", ADMIN_PASSWORD)) return send(res, 401, { error: "Incorrect password." });
-      const payload = `admin:${Date.now()}`;
-      const token = `${payload}.${sign(payload)}`;
-      return send(res, 200, { ok: true }, "application/json; charset=utf-8", {
-        "Set-Cookie": `${COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200; Secure`
-      });
-    } catch { return send(res, 400, { error: "Invalid request." }); }
-  }
-  if (req.method === "POST" && pathname === "/api/logout") {
-    return send(res, 200, { ok: true }, "application/json; charset=utf-8", {
-      "Set-Cookie": `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0; Secure`
-    });
-  }
-  if (pathname.startsWith("/api/")) {
-    if (!isAuthed(req)) return send(res, 401, { error: "Sign in to edit files." });
-    if (req.method === "GET" && pathname === "/api/capes.json") return send(res, 200, fs.readFileSync(FILES["/capes.json"], "utf8"), "application/json; charset=utf-8");
-    if (req.method === "GET" && pathname === "/api/players.json") return send(res, 200, fs.readFileSync(FILES["/players.json"], "utf8"), "application/json; charset=utf-8");
-    if (req.method === "PUT" && (pathname === "/api/capes.json" || pathname === "/api/players.json")) {
-      const name = pathname.slice("/api/".length);
-      try {
-        const raw = await readBody(req);
-        const parsed = JSON.parse(raw);
-        const error = validateJsonFile(name, parsed);
-        if (error) return send(res, 422, { error });
-        atomicWrite(FILES["/" + name], JSON.stringify(parsed, null, 2) + "\n");
-        return send(res, 200, { ok: true, message: `${name} saved.` });
-      } catch (e) {
-        if (e instanceof SyntaxError) return send(res, 422, { error: "Invalid JSON syntax." });
-        return send(res, 400, { error: e.message || "Could not save file." });
-      }
-    }
-    return send(res, 404, { error: "Unknown API endpoint." });
-  }
-  if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "Method not allowed." });
-  return serveStatic(req, res, pathname);
+    const host=hostOf(req), url=new URL(req.url,'http://localhost');
+    if(host===PUBLIC_HOST) return await publicRoute(req,res,url);
+    if(host===ADMIN_HOST) return await adminRoute(req,res,url);
+    return json(res,421,{error:'Unknown host'});
+  } catch(e) { console.error(e); return json(res,500,{error:e.message||'Internal server error'}); }
 });
-
-ensureData();
-server.listen(PORT, "0.0.0.0", () => console.log(`Civitas Capes host listening on port ${PORT}`));
+server.listen(PORT,'0.0.0.0',()=>console.log(`Civitas Capes listening on ${PORT}; public=${PUBLIC_HOST}; admin=${ADMIN_HOST}`));

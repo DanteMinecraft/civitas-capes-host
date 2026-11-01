@@ -1,41 +1,52 @@
-# Civitas Capes Host — admin edition
+# Civitas Capes v2 — split public API and private admin
 
-A small Node.js web service with:
-- Public read-only endpoints: `/capes.json`, `/players.json`, `/capes/<filename>.png`
-- Admin UI: `/admin`
-- Password-protected editing of the JSON files without Git commits or redeployment
-- Validation before saving and atomic file writes
-- Persistent data directory (`/data`) for Dokploy deployments
+## Architecture
+One Node service, two hostnames, strict host-based routing:
+- `PUBLIC_HOST` (default `capedatabase.teamcivitas.net`): read-only `GET /capes.json`, `GET /players.json`, `GET /capes/<image>`, `GET /health`.
+- `ADMIN_HOST` (default `capeadmin.teamcivitas.net`): password-protected admin UI and write API.
+- Both read/write the same persistent `/data` directory.
 
-## Before deployment
-1. Edit `data/capes.json`: replace `YOUR-DOMAIN` with your public hostname.
-2. Edit `data/players.json`: replace the sample UUID with a real UUID.
-3. Add your cape PNG files to `data/capes/`.
-4. Push the project to your Git repository.
+The admin UI password is an additional application login. Protect the entire admin hostname with Cloudflare Access and allow only explicitly invited email addresses. Do not rely on an obscure URL.
 
-## Deploy in Dokploy
-Create an Application from this repository and use the included Dockerfile.
-- Domain/container port: **3000**
-- Do not publish port 3000 directly; route it through Dokploy's proxy.
-- Add environment variables:
-  - `ADMIN_PASSWORD`: a strong unique password, at least 16 characters
-  - `COOKIE_SECRET`: a random secret at least 32 characters long (for example output from `openssl rand -hex 32`)
-- Enable HTTPS for the public domain.
-- Configure persistent storage/volume so the host directory `/data` persists across redeployments. Without a persistent volume, edits may be lost on a future deployment.
-- Do not set `DATA_DIR` unless you have a reason; default is `/data`.
+## Required environment variables
+- `ADMIN_PASSWORD`: strong unique password, at least 16 characters.
+- `COOKIE_SECRET`: random secret, at least 32 characters. Generate with `openssl rand -hex 32`.
+- `PUBLIC_HOST=capedatabase.teamcivitas.net`
+- `ADMIN_HOST=capeadmin.teamcivitas.net`
+- `PORT=3000`
+- `DATA_DIR=/data`
 
-The included `docker-compose.yml` demonstrates the persistent volume mount. If using Dokploy's Docker Compose deployment, it can be used directly; set the two environment variables in Dokploy. For a Dockerfile-based app, configure a persistent volume mounted at `/data`.
+## Dokploy deployment
+1. Deploy this repository as a Docker app/service and expose container port **3000**.
+2. Add the two domains to the same app/service, both targeting port 3000:
+   - `capedatabase.teamcivitas.net`
+   - `capeadmin.teamcivitas.net`
+3. Add a persistent volume mounted at **`/data`**. Keep using the existing volume that currently contains `capes.json`, `players.json` and `capes/`. Do not create a fresh empty volume if you need to preserve current data.
+4. Set the environment variables above.
+5. Deploy. The service identifies which routes to expose based on the request Host header.
+6. Configure Cloudflare Access application for `capeadmin.teamcivitas.net` (include all paths) and create an allow policy for only your email and invited administrators. Use the Access dashboard's current UI. Keep `capedatabase.teamcivitas.net` outside that Access application.
+7. Test:
+   - `https://capedatabase.teamcivitas.net/health` => `{"ok":true}`
+   - `https://capedatabase.teamcivitas.net/capes.json` => public catalog
+   - `https://capedatabase.teamcivitas.net/capes/auth.png` => image
+   - `https://capeadmin.teamcivitas.net/` => Cloudflare Access login, then app password login.
 
-## URLs after deployment
-- `/` — public landing page
-- `/admin` — password-protected JSON editor
-- `/capes.json` — public cape catalog
-- `/players.json` — public player assignments
-- `/capes/auth.png` — example cape texture path
+## Preserve current database before deploying
+Before changing the running app, make a backup of the existing persistent data volume:
+- Copy `/data/capes.json`, `/data/players.json`, and all `/data/capes/` files.
+- Do not overwrite existing data with the empty sample `data/` directory in this repository.
+- The sample `data/` directory is for local development only; it is excluded from the Docker image.
 
-## Important security notes
-- Use HTTPS.
-- Keep the admin password private and use a strong unique password.
-- Public JSON files and texture URLs are intentionally readable by anyone.
-- `capeForced` only affects compatible clients; this client-side mod cannot enforce server-side restrictions against modified clients.
-- This starter provides editing for JSON files, not image uploads through the admin UI. To add or replace PNGs, upload them to the persistent `/data/capes` directory using your hosting/file-management method.
+## Uploading a cape
+1. Open the admin hostname and sign in.
+2. In Cape Manager choose an image (PNG/JPG/WEBP, max 5 MB).
+3. Enter a simple filename such as `earthbound.png` and upload.
+4. Add a cape entry to the catalog JSON, e.g.
+   `{ "id":"earthbound", "displayName":"Earthbound", "type":"URL", "location":"https://capedatabase.teamcivitas.net/capes/earthbound.png" }`
+5. Save the catalog. Add the ID to players' `unlockedCapes` and set `activeCape` as desired.
+
+## Important notes
+- Minecraft clients continue to use the same public URLs. No mod update is needed just for this split.
+- Public player JSON exposes player UUIDs and cape assignments; this is expected by the current mod design.
+- The admin panel currently uses one shared app password. Cloudflare Access provides the individual invited-email allowlist. Share the app password only with trusted admins. Individual app accounts and audit logging are not included in this initial build.
+- Back up `/data` regularly.
