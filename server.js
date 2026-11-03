@@ -109,10 +109,15 @@ async function publicRoute(req, res, url) {
     }
 
     let input;
+
     try {
       input = JSON.parse((await body(req, 8192)).toString('utf8'));
     } catch {
       return json(res, 400, { error: 'Invalid JSON body' });
+    }
+
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return json(res, 400, { error: 'Invalid request body' });
     }
 
     const uuid = String(input.uuid || '').toLowerCase();
@@ -156,10 +161,6 @@ async function publicRoute(req, res, url) {
       uuid,
       activeCape: capeId
     });
-  }
-
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return json(res, 400, { error: 'Invalid request body' });
   }
 
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { ok: true });
