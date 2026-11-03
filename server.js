@@ -18,6 +18,70 @@ if (COOKIE_SECRET.length < 32) throw new Error('COOKIE_SECRET must be at least 3
 if (PUBLIC_HOST === ADMIN_HOST) throw new Error('PUBLIC_HOST and ADMIN_HOST must be different.');
 
 const sessions = new Map();
+
+const rateLimits = new Map();
+
+function getClientIp(req) {
+  // Cloudflare provides the original visitor IP.
+  const cfIp = req.headers['cf-connecting-ip'];
+
+  if (typeof cfIp === 'string' && cfIp.trim()) {
+    return cfIp.trim();
+  }
+
+  return req.socket.remoteAddress || 'unknown';
+}
+
+function rateLimit(req, res, options) {
+  const { key, max, windowMs } = options;
+  const now = Date.now();
+  const ip = getClientIp(req);
+  const bucketKey = `${key}:${ip}`;
+
+  let entry = rateLimits.get(bucketKey);
+
+  if (!entry || now >= entry.resetAt) {
+    entry = {
+      count: 0,
+      resetAt: now + windowMs
+    };
+  }
+
+  if (entry.count >= max) {
+    const retryAfter = Math.max(
+      1,
+      Math.ceil((entry.resetAt - now) / 1000)
+    );
+
+    json(res, 429, {
+      error: 'Too many requests',
+      retryAfter
+    }, {
+      'Retry-After': String(retryAfter)
+    });
+
+    return false;
+  }
+
+  entry.count++;
+  rateLimits.set(bucketKey, entry);
+
+  return true;
+}
+
+// Remove expired entries periodically to prevent memory growth.
+const rateLimitCleanup = setInterval(() => {
+  const now = Date.now();
+
+  for (const [key, entry] of rateLimits) {
+    if (now >= entry.resetAt) {
+      rateLimits.delete(key);
+    }
+  }
+}, 60_000);
+
+rateLimitCleanup.unref();
+
 const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.html': 'text/html; charset=utf-8' };
 
 function hostOf(req) { return String(req.headers.host || '').split(':')[0].toLowerCase(); }
@@ -86,6 +150,43 @@ function adminGate(req, res) {
   return s;
 }
 async function publicRoute(req, res, url) {
+
+
+  // Rate limiting for public endpoints.
+
+  if (
+    req.method === 'POST' &&
+    url.pathname === '/api/integration/active-cape'
+  ) {
+    if (!rateLimit(req, res, {
+      key: 'integration',
+      max: 20,
+      windowMs: 60_000
+    })) return;
+  }
+
+  if (
+    req.method === 'GET' &&
+    (url.pathname === '/capes.json' ||
+      url.pathname === '/players.json')
+  ) {
+    if (!rateLimit(req, res, {
+      key: 'public-json',
+      max: 120,
+      windowMs: 60_000
+    })) return;
+  }
+
+  if (
+    req.method === 'GET' &&
+    url.pathname.startsWith('/capes/')
+  ) {
+    if (!rateLimit(req, res, {
+      key: 'cape-images',
+      max: 300,
+      windowMs: 60_000
+    })) return;
+  }
 
   // Player Platform integration: change a player's active cape.
   if (req.method === 'POST' && url.pathname === '/api/integration/active-cape') {
@@ -181,6 +282,11 @@ async function adminRoute(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/admin.js') return send(res, 200, await fs.readFile(path.join(__dirname, 'public/admin.js'), 'utf8'), 'text/javascript; charset=utf-8');
   if (req.method === 'GET' && url.pathname === '/styles.css') return send(res, 200, await fs.readFile(path.join(__dirname, 'public/styles.css'), 'utf8'), 'text/css; charset=utf-8');
   if (req.method === 'POST' && url.pathname === '/api/login') {
+    if (!rateLimit(req, res, {
+      key: 'admin-login',
+      max: 10,
+      windowMs: 15 * 60_000
+    })) return;
     const b = JSON.parse((await body(req, 8192)).toString('utf8'));
     const a = Buffer.from(String(b.password || '')), expected = Buffer.from(ADMIN_PASSWORD);
     if (a.length !== expected.length || !crypto.timingSafeEqual(a, expected)) return json(res, 401, { error: 'Incorrect password' });
