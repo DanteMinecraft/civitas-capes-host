@@ -265,16 +265,54 @@ async function publicRoute(req, res, url) {
   }
 
   if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, { ok: true });
+
   if (req.method === 'GET' && (url.pathname === '/capes.json' || url.pathname === '/players.json')) {
     const name = url.pathname.slice(1); const data = await readJson(name);
     return send(res, 200, JSON.stringify(data), 'application/json; charset=utf-8', { 'Cache-Control': 'public, max-age=15' });
   }
+
+
+  if (req.method === 'OPTIONS' && url.pathname.startsWith('/capes/')) {
+    return send(res, 204, '', 'text/plain', {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400'
+    });
+  }
+
   if (req.method === 'GET' && url.pathname.startsWith('/capes/')) {
     const name = path.basename(decodeURIComponent(url.pathname.slice('/capes/'.length)));
-    if (!/^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp)$/i.test(name)) return json(res, 404, { error: 'Not found' });
-    try { const p = path.join(DATA_DIR, 'capes', name); const data = await fs.readFile(p); return send(res, 200, data, mime[path.extname(name).toLowerCase()] || 'application/octet-stream', { 'Cache-Control': 'public, max-age=300' }); }
-    catch (e) { if (e.code === 'ENOENT') return json(res, 404, { error: 'Cape not found' }); throw e; }
+
+    if (!/^[a-zA-Z0-9._-]+\.(png|jpg|jpeg|webp)$/i.test(name)) {
+      return json(res, 404, { error: 'Not found' });
+    }
+
+    try {
+      const p = path.join(DATA_DIR, 'capes', name);
+      const data = await fs.readFile(p);
+
+      return send(
+        res,
+        200,
+        data,
+        mime[path.extname(name).toLowerCase()] || 'application/octet-stream',
+        {
+          'Cache-Control': 'public, max-age=300',
+          'Access-Control-Allow-Origin': '*',
+          'Cross-Origin-Resource-Policy': 'cross-origin'
+        }
+      );
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        return json(res, 404, { error: 'Cape not found' });
+      }
+
+      throw e;
+    }
   }
+
+
   return json(res, 404, { error: 'Not found' });
 }
 async function adminRoute(req, res, url) {
